@@ -90,6 +90,13 @@ implementation is used:
     * `rest`
     * `nessie`
     * `snowflake`
+
+    :::{note}
+    When using `rest` with AWS S3 Tables, certain features are not supported due 
+    to S3 Tables API limitations. The `sorted_by` table property is not supported 
+    as it requires file-level operations. File cleanup operations during 
+    fault-tolerant execution are skipped gracefully.
+    :::
   - `hive_metastore`
 * - `iceberg.file-format`
   - Define the data storage file format for Iceberg tables. Possible values are:

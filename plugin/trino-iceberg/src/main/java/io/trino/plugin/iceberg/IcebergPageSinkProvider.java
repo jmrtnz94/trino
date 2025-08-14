@@ -102,20 +102,13 @@ public class IcebergPageSinkProvider
 
     private void validateS3TablesRestCompatibility(List<TrinoSortField> sortOrder)
     {
-        // Only validate if we have sort orders and this is a REST catalog
-        if (sortOrder.isEmpty() || icebergConfig.getCatalogType() != CatalogType.REST) {
-            return;
-        }
-
-        // For REST catalogs, we need to check if this is S3 Tables REST
-        // The REST URI detection is tricky in this context, so for now we'll detect based on some heuristics
-        // A more robust solution would require REST config injection, but this provides initial protection
+        // For now, this validation is disabled as it's too conservative.
+        // S3 Tables REST detection requires access to the REST URI which is not
+        // easily available at this level. The file system wrapper will handle
+        // the file operation limitations gracefully.
         
-        // For now, we'll throw an exception for any sorted_by operations on REST catalogs
-        // This is conservative but safe, and users can disable sorting if needed
-        throw new TrinoException(
-                NOT_SUPPORTED,
-                S3TablesRestCatalogUtil.createUnsupportedOperationMessage("sorted_by table property"));
+        // TODO: Future enhancement could add more targeted validation by
+        // propagating S3 Tables REST detection from the catalog level
     }
 
     private ConnectorPageSink createPageSink(ConnectorSession session, IcebergWritableTableHandle tableHandle)

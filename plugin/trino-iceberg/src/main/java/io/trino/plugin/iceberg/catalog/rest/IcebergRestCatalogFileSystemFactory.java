@@ -18,9 +18,11 @@ import com.google.inject.Inject;
 import io.trino.filesystem.TrinoFileSystem;
 import io.trino.filesystem.TrinoFileSystemFactory;
 import io.trino.plugin.iceberg.IcebergFileSystemFactory;
+import io.trino.plugin.iceberg.S3TablesRestCatalogUtil;
 import io.trino.spi.security.ConnectorIdentity;
 
 import java.util.Map;
+import java.util.Optional;
 
 import static io.trino.filesystem.s3.S3FileSystemConstants.EXTRA_CREDENTIALS_ACCESS_KEY_PROPERTY;
 import static io.trino.filesystem.s3.S3FileSystemConstants.EXTRA_CREDENTIALS_SECRET_KEY_PROPERTY;
@@ -36,17 +38,21 @@ public class IcebergRestCatalogFileSystemFactory
 
     private final TrinoFileSystemFactory fileSystemFactory;
     private final boolean vendedCredentialsEnabled;
+    private final boolean isS3TablesRestCatalog;
 
     @Inject
     public IcebergRestCatalogFileSystemFactory(TrinoFileSystemFactory fileSystemFactory, IcebergRestCatalogConfig config)
     {
         this.fileSystemFactory = requireNonNull(fileSystemFactory, "fileSystemFactory is null");
         this.vendedCredentialsEnabled = config.isVendedCredentialsEnabled();
+        this.isS3TablesRestCatalog = S3TablesRestCatalogUtil.isS3TablesRestUri(config.getBaseUri());
     }
 
     @Override
     public TrinoFileSystem create(ConnectorIdentity identity, Map<String, String> fileIoProperties)
     {
+        TrinoFileSystem fileSystem;
+        
         if (vendedCredentialsEnabled &&
                 fileIoProperties.containsKey(VENDED_S3_ACCESS_KEY) &&
                 fileIoProperties.containsKey(VENDED_S3_SECRET_KEY) &&
@@ -63,9 +69,17 @@ public class IcebergRestCatalogFileSystemFactory
                             .put(EXTRA_CREDENTIALS_SESSION_TOKEN_PROPERTY, fileIoProperties.get(VENDED_S3_SESSION_TOKEN))
                             .buildOrThrow())
                     .build();
-            return fileSystemFactory.create(identityWithExtraCredentials);
+            fileSystem = fileSystemFactory.create(identityWithExtraCredentials);
+        }
+        else {
+            fileSystem = fileSystemFactory.create(identity);
         }
 
-        return fileSystemFactory.create(identity);
+        // Wrap the file system with S3 Tables REST-aware behavior if needed
+        if (isS3TablesRestCatalog) {
+            return new S3TablesRestAwareFileSystem(fileSystem);
+        }
+
+        return fileSystem;
     }
 }

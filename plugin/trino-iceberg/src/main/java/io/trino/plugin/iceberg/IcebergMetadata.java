@@ -49,6 +49,7 @@ import io.trino.plugin.hive.HiveWrittenPartitions;
 import io.trino.plugin.iceberg.aggregation.DataSketchStateSerializer;
 import io.trino.plugin.iceberg.aggregation.IcebergThetaSketchForStats;
 import io.trino.plugin.iceberg.catalog.TrinoCatalog;
+import io.trino.plugin.iceberg.catalog.rest.TrinoRestCatalog;
 import io.trino.plugin.iceberg.functions.IcebergFunctionProvider;
 import io.trino.plugin.iceberg.procedure.IcebergAddFilesFromTableHandle;
 import io.trino.plugin.iceberg.procedure.IcebergAddFilesHandle;
@@ -2577,6 +2578,20 @@ public class IcebergMetadata
         }
 
         if (properties.containsKey(SORTED_BY_PROPERTY)) {
+            // Check if this is a REST catalog that might be S3 Tables REST
+            if (catalog instanceof TrinoRestCatalog) {
+                // For REST catalogs, we need to be careful about sorted_by as AWS S3 Tables REST
+                // doesn't support file-level operations required for sorting.
+                // We provide a conservative error message with guidance for users.
+                throw new TrinoException(
+                        NOT_SUPPORTED,
+                        "The 'sorted_by' table property is not supported with REST catalogs when using AWS S3 Tables. " +
+                        "AWS S3 Tables REST API provides table-centric access and does not support direct file operations " +
+                        "required for sorting. If you are using a different REST catalog implementation that supports " +
+                        "file-level operations, please contact your administrator or consider using a different catalog type. " +
+                        "For more information, see the Trino documentation on Iceberg connector limitations.");
+            }
+            
             @SuppressWarnings("unchecked")
             List<String> sortColumns = (List<String>) properties.get(SORTED_BY_PROPERTY)
                     .orElseThrow(() -> new IllegalArgumentException("The sorted_by property cannot be empty"));

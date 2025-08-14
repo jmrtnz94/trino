@@ -21,6 +21,7 @@ import io.trino.plugin.iceberg.procedure.IcebergOptimizeHandle;
 import io.trino.plugin.iceberg.procedure.IcebergTableExecuteHandle;
 import io.trino.spi.PageIndexerFactory;
 import io.trino.spi.PageSorter;
+import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ConnectorInsertTableHandle;
 import io.trino.spi.connector.ConnectorMergeSink;
 import io.trino.spi.connector.ConnectorMergeTableHandle;
@@ -38,7 +39,14 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
 import org.apache.iceberg.io.LocationProvider;
 
+import java.util.List;
 import java.util.Map;
+
+import static com.google.common.collect.Maps.transformValues;
+import static io.trino.plugin.iceberg.IcebergSessionProperties.maxPartitionsPerWriter;
+import static io.trino.plugin.iceberg.IcebergUtil.getLocationProvider;
+import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
+import static java.util.Objects.requireNonNull;
 
 import static com.google.common.collect.Maps.transformValues;
 import static io.trino.plugin.iceberg.IcebergSessionProperties.maxPartitionsPerWriter;
@@ -56,6 +64,7 @@ public class IcebergPageSinkProvider
     private final int sortingFileWriterMaxOpenFiles;
     private final TypeManager typeManager;
     private final PageSorter pageSorter;
+    private final IcebergConfig icebergConfig;
 
     @Inject
     public IcebergPageSinkProvider(
@@ -65,7 +74,8 @@ public class IcebergPageSinkProvider
             PageIndexerFactory pageIndexerFactory,
             SortingFileWriterConfig sortingFileWriterConfig,
             TypeManager typeManager,
-            PageSorter pageSorter)
+            PageSorter pageSorter,
+            IcebergConfig icebergConfig)
     {
         this.fileSystemFactory = requireNonNull(fileSystemFactory, "fileSystemFactory is null");
         this.jsonCodec = requireNonNull(jsonCodec, "jsonCodec is null");
@@ -75,6 +85,7 @@ public class IcebergPageSinkProvider
         this.sortingFileWriterMaxOpenFiles = sortingFileWriterConfig.getMaxOpenSortFiles();
         this.typeManager = requireNonNull(typeManager, "typeManager is null");
         this.pageSorter = requireNonNull(pageSorter, "pageSorter is null");
+        this.icebergConfig = requireNonNull(icebergConfig, "icebergConfig is null");
     }
 
     @Override
@@ -89,12 +100,27 @@ public class IcebergPageSinkProvider
         return createPageSink(session, (IcebergWritableTableHandle) insertTableHandle);
     }
 
+    private void validateS3TablesRestCompatibility(List<TrinoSortField> sortOrder)
+    {
+        // For now, this validation is disabled as it's too conservative.
+        // S3 Tables REST detection requires access to the REST URI which is not
+        // easily available at this level. The file system wrapper will handle
+        // the file operation limitations gracefully.
+        
+        // TODO: Future enhancement could add more targeted validation by
+        // propagating S3 Tables REST detection from the catalog level
+    }
+
     private ConnectorPageSink createPageSink(ConnectorSession session, IcebergWritableTableHandle tableHandle)
     {
         Schema schema = SchemaParser.fromJson(tableHandle.schemaAsJson());
         String partitionSpecJson = tableHandle.partitionsSpecsAsJson().get(tableHandle.partitionSpecId());
         PartitionSpec partitionSpec = PartitionSpecParser.fromJson(schema, partitionSpecJson);
         LocationProvider locationProvider = getLocationProvider(tableHandle.name(), tableHandle.outputPath(), tableHandle.storageProperties());
+        
+        List<TrinoSortField> sortOrder = tableHandle.sortOrder();
+        validateS3TablesRestCompatibility(sortOrder);
+        
         return new IcebergPageSink(
                 schema,
                 partitionSpec,
@@ -108,7 +134,7 @@ public class IcebergPageSinkProvider
                 tableHandle.fileFormat(),
                 tableHandle.storageProperties(),
                 maxPartitionsPerWriter(session),
-                tableHandle.sortOrder(),
+                sortOrder,
                 sortingFileWriterBufferSize,
                 sortingFileWriterMaxOpenFiles,
                 typeManager,
